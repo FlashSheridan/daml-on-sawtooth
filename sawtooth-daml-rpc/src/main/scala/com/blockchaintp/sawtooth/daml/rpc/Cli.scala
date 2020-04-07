@@ -11,8 +11,8 @@ import scopt.Read
 
 object Cli {
 
-  private implicit val ledgerStringRead: Read[Ref.LedgerString] =
-    Read.stringRead.map(Ref.LedgerString.assertFromString)
+  private implicit val participantIdRead: Read[Ref.ParticipantId] =
+    Read.stringRead.map(Ref.ParticipantId.assertFromString)
 
   private val pemConfig = (path: String, config: SawtoothDamlRpcConfig) =>
     config.copy(
@@ -75,7 +75,7 @@ object Cli {
           "The JDBC URL to the postgres database used for the indexer and the index"
         )
         .action((u, c) => c.copy(jdbcUrl = u))
-      opt[Ref.LedgerString]("participant-id")
+      opt[Ref.ParticipantId]("participant-id")
         .optional()
         .text(
           "The participant id given to all components of a ledger api server"

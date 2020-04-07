@@ -114,11 +114,11 @@ public final class Namespace {
   /**
    * Make an address given a namespace, and bytes representing the key.
    *
-   * @param ns    the namespace byte string
+   * @param ns       the namespace byte string
    * @param keybytes byte upon which to basethe key
    * @return the hash of the collected address
    */
-  public static String makeAddress(final String ns, final byte[] keybytes]) {
+  public static String makeAddress(final String ns, final byte[] keybytes) {
     String hash = SawtoothClientUtils.getHash(keybytes);
     int begin = hash.length() - ADDRESS_LENGTH + ns.length();
     hash = hash.substring(begin);

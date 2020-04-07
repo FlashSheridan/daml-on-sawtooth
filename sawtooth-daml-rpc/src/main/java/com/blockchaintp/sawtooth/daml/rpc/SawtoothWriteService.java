@@ -330,4 +330,8 @@ public final class SawtoothWriteService implements LedgerWriter {
   public String participantId() {
     return getParticipantId();
   }
+
+  public static void main(String[] args) {
+    StandaloneApi
+  }
 }

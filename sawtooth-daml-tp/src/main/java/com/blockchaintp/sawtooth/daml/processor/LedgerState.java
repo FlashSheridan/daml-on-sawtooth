@@ -10,14 +10,12 @@
 package com.blockchaintp.sawtooth.daml.processor;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlLogEntry;
-import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlLogEntryId;
 import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlStateKey;
 import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlStateValue;
+import com.daml.ledger.validator.LedgerStateAccess;
 import com.daml.ledger.validator.LedgerStateOperations;
 import com.google.protobuf.Timestamp;
 
@@ -29,7 +27,7 @@ import sawtooth.sdk.processor.exceptions.InvalidTransactionException;
  *
  * @author scealiontach
  */
-public interface LedgerState extends LedgerStateOperations<LogResult> {
+public interface LedgerState<T> extends LedgerStateOperations<T>, LedgerStateAccess<T> {
   /**
    * Fetch a single DamlStateValue from the ledger state.
    *
@@ -79,16 +77,6 @@ public interface LedgerState extends LedgerStateOperations<LogResult> {
    * @throws InternalError               when there is an unexpected back end error.
    */
   void setDamlStates(Collection<Entry<DamlStateKey, DamlStateValue>> entries)
-      throws InternalError, InvalidTransactionException;
-
-  /**
-   * @param entryId Id of this log entry
-   * @param entry   the log entry to set
-   * @return the new entry list after the addition
-   * @throws InvalidTransactionException when there is an error relating to the client input
-   * @throws InternalError               when there is an unexpected back end error.
-   */
-  List<String> addDamlLogEntry(DamlLogEntryId entryId, DamlLogEntry entry)
       throws InternalError, InvalidTransactionException;
 
   /**
