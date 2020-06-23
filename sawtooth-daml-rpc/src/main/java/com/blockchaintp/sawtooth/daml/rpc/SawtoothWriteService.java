@@ -1,14 +1,12 @@
-/* Copyright 2019 Blockchain Technology Partners
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
-     http://www.apache.org/licenses/LICENSE-2.0
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
-------------------------------------------------------------------------------*/
+/*
+ * Copyright 2019 Blockchain Technology Partners Licensed under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License. You may obtain a
+ * copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable
+ * law or agreed to in writing, software distributed under the License is distributed on an "AS IS"
+ * BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ * for the specific language governing permissions and limitations under the License.
+ * ------------------------------------------------------------------------------
+ */
 package com.blockchaintp.sawtooth.daml.rpc;
 
 import static com.blockchaintp.sawtooth.timekeeper.util.Namespace.TIMEKEEPER_GLOBAL_RECORD;
@@ -36,6 +34,7 @@ import com.blockchaintp.sawtooth.daml.util.KeyValueUtils;
 import com.blockchaintp.sawtooth.daml.util.Namespace;
 import com.blockchaintp.utils.KeyManager;
 import com.blockchaintp.utils.SawtoothClientUtils;
+import com.codahale.metrics.SharedMetricRegistries;
 import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlLogEntryId;
 import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlStateKey;
 import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlSubmission;
@@ -43,8 +42,10 @@ import com.daml.ledger.participant.state.kvutils.KeyValueCommitting;
 import com.daml.ledger.participant.state.kvutils.KeyValueSubmission;
 import com.daml.ledger.participant.state.kvutils.api.LedgerWriter;
 import com.daml.ledger.participant.state.v1.SubmissionResult;
-import com.digitalasset.ledger.api.health.HealthStatus;
-import com.digitalasset.ledger.api.health.Healthy$;
+import com.daml.lf.engine.Engine;
+import com.daml.metrics.Metrics;
+import com.daml.ledger.api.health.HealthStatus;
+import com.daml.ledger.api.health.Healthy$;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.util.JsonFormat;
@@ -67,8 +68,8 @@ import scala.collection.JavaConverters;
 import scala.compat.java8.FutureConverters;
 
 /**
- * A implementation of Sawtooth write service. This is responsible for writing
- * Daml submission to to Sawtooth validator.
+ * A implementation of Sawtooth write service. This is responsible for writing Daml submission to to
+ * Sawtooth validator.
  */
 public final class SawtoothWriteService implements LedgerWriter {
 
@@ -98,13 +99,18 @@ public final class SawtoothWriteService implements LedgerWriter {
 
   private int outstandingBatches = 0;
 
+  private Metrics metrics;
+
+  private Engine engine;
+
+  private KeyValueCommitting kvCommitting;
+
   /**
    * Construct a SawtoothWriteService instance from a concrete stream.
    *
    * @param implementation of a ZMQ stream.
    * @param kmgr           the keyManager for this service.
-   * @param txnTracer      a RESTFul interface to push record of sawtooth
-   *                       transactions.
+   * @param txnTracer      a RESTFul interface to push record of sawtooth transactions.
    * @param participant    a string identifying this participant
    */
   private SawtoothWriteService(final Stream implementation, final KeyManager kmgr,
@@ -113,6 +119,12 @@ public final class SawtoothWriteService implements LedgerWriter {
     this.keyManager = kmgr;
     this.sawtoothTransactionsTracer = txnTracer;
     this.participantId = participant;
+    this.metrics = new Metrics(SharedMetricRegistries.getOrCreate(participant));
+    // TODO this seems very messy to need these here when they aren't really used
+    // kvCommitting is used only because it is the only way we can get to the submissionOutputs
+    // method
+    this.engine = new Engine();
+    this.kvCommitting = new KeyValueCommitting(this.engine, this.metrics);
   }
 
   /**
@@ -120,8 +132,7 @@ public final class SawtoothWriteService implements LedgerWriter {
    *
    * @param validatorAddress in String format e.g. "http://localhost:3030".
    * @param kmgr             the keyManager for this service.
-   * @param txnTracer        a RESTFul interface to push record of sawtooth
-   *                         transactions.
+   * @param txnTracer        a RESTFul interface to push record of sawtooth transactions.
    * @param participant      a string identifying this participant
    */
   public SawtoothWriteService(final String validatorAddress, final KeyManager kmgr,
@@ -138,23 +149,28 @@ public final class SawtoothWriteService implements LedgerWriter {
     return this.participantId;
   }
 
-  private DamlSubmission envelopeToSubmission(final byte[] envelope) {
-    DamlSubmission submission = KeyValueSubmission.unpackDamlSubmission(ByteString.copyFrom(envelope));
+  private DamlSubmission envelopeToSubmission(final ByteString envelope)
+      throws InvalidProtocolBufferException {
+    DamlSubmission submission = DamlSubmission.parseFrom(envelope.toByteArray());
     return submission;
   }
-  private Collection<String> makeInputAddresses(final byte[] envelope) {
+
+  private Collection<String> makeInputAddresses(final ByteString envelope)
+      throws InvalidProtocolBufferException {
     DamlSubmission submission = envelopeToSubmission(envelope);
     Set<String> addresses = new HashSet<>();
-    Map<DamlStateKey, String> submissionToDamlStateAddress = KeyValueUtils.submissionToDamlStateAddress(submission);
+    Map<DamlStateKey, String> submissionToDamlStateAddress =
+        KeyValueUtils.submissionToDamlStateAddress(submission);
     addresses.addAll(submissionToDamlStateAddress.values());
     addresses.add(TIMEKEEPER_GLOBAL_RECORD);
     return addresses;
   }
 
-  private Collection<String> makeOutputAddresses(final byte[] envelope, final DamlLogEntryId logEntryId) {
+  private Collection<String> makeOutputAddresses(final ByteString envelope,
+      final DamlLogEntryId logEntryId) throws InvalidProtocolBufferException {
     DamlSubmission submission = envelopeToSubmission(envelope);
     Collection<DamlStateKey> keys = JavaConverters
-        .asJavaCollection(KeyValueCommitting.submissionOutputs(logEntryId, submission));
+        .asJavaCollection(this.kvCommitting.submissionOutputs(logEntryId, submission));
     Set<String> addresses = new HashSet<>();
     for (DamlStateKey k : keys) {
       addresses.add(Namespace.makeAddressForType(k));
@@ -163,8 +179,8 @@ public final class SawtoothWriteService implements LedgerWriter {
     return addresses;
   }
 
-  private Map.Entry<String, ClientBatchSubmitResponse.Status> submissionToResponse(final String batchid,
-      final Future submissionFuture) throws SawtoothWriteServiceException {
+  private Map.Entry<String, ClientBatchSubmitResponse.Status> submissionToResponse(
+      final String batchid, final Future submissionFuture) throws SawtoothWriteServiceException {
     try {
       ByteString result = submissionFuture.getResult();
       ClientBatchSubmitResponse getResponse = ClientBatchSubmitResponse.parseFrom(result);
@@ -197,8 +213,8 @@ public final class SawtoothWriteService implements LedgerWriter {
   private Future sendToValidator(final Batch batch) {
     // Push to TraceTransaction class
     try {
-      Printer includingDefaultValueFields = JsonFormat.printer().preservingProtoFieldNames()
-          .includingDefaultValueFields();
+      Printer includingDefaultValueFields =
+          JsonFormat.printer().preservingProtoFieldNames().includingDefaultValueFields();
       String txnInJson = includingDefaultValueFields.print(batch);
       this.sawtoothTransactionsTracer.putWriteTransactions(txnInJson);
     } catch (Throwable e) {
@@ -211,21 +227,24 @@ public final class SawtoothWriteService implements LedgerWriter {
       this.condition.awaitUninterruptibly();
     }
     LOGGER.info(String.format("Batch submission %s", batch.getHeaderSignature()));
-    ClientBatchSubmitRequest cbsReq = ClientBatchSubmitRequest.newBuilder().addBatches(batch).build();
-    Future streamToValidator = this.stream.send(Message.MessageType.CLIENT_BATCH_SUBMIT_REQUEST, cbsReq.toByteString());
+    ClientBatchSubmitRequest cbsReq =
+        ClientBatchSubmitRequest.newBuilder().addBatches(batch).build();
+    Future streamToValidator =
+        this.stream.send(Message.MessageType.CLIENT_BATCH_SUBMIT_REQUEST, cbsReq.toByteString());
     this.outstandingBatches++;
     this.lock.unlock();
     return streamToValidator;
   }
 
-  private CompletionStage<Map.Entry<String, ClientBatchSubmitResponse.Status>> waitForSubmitResponse(final Batch batch,
-      final Future streamToValidator) {
+  private CompletionStage<Map.Entry<String, ClientBatchSubmitResponse.Status>> waitForSubmitResponse(
+      final Batch batch, final Future streamToValidator) {
     return CompletableFuture.supplyAsync(() -> {
       try {
         return submissionToResponse(batch.getHeaderSignature(), streamToValidator);
       } catch (SawtoothWriteServiceException exc) {
         LOGGER.severe(exc.getMessage());
-        return Map.entry(batch.getHeaderSignature(), ClientBatchSubmitResponse.Status.INTERNAL_ERROR);
+        return Map.entry(batch.getHeaderSignature(),
+            ClientBatchSubmitResponse.Status.INTERNAL_ERROR);
       }
     }, watchThreadPool);
   }
@@ -247,9 +266,10 @@ public final class SawtoothWriteService implements LedgerWriter {
     String batchid = submission.getKey();
     while (true) {
       try {
-        ClientBatchStatusRequest cbstatReq = ClientBatchStatusRequest.newBuilder().addBatchIds(batchid).setWait(true)
-            .setTimeout(DEFAULT_WAIT_TIME).build();
-        Future cbstatFut = this.stream.send(MessageType.CLIENT_BATCH_STATUS_REQUEST, cbstatReq.toByteString());
+        ClientBatchStatusRequest cbstatReq = ClientBatchStatusRequest.newBuilder()
+            .addBatchIds(batchid).setWait(true).setTimeout(DEFAULT_WAIT_TIME).build();
+        Future cbstatFut =
+            this.stream.send(MessageType.CLIENT_BATCH_STATUS_REQUEST, cbstatReq.toByteString());
         ByteString result = cbstatFut.getResult();
         ClientBatchStatusResponse cbsResp = ClientBatchStatusResponse.parseFrom(result);
         List<ClientBatchStatus> batchStatusesList = cbsResp.getBatchStatusesList();
@@ -285,23 +305,24 @@ public final class SawtoothWriteService implements LedgerWriter {
     }
   }
 
-  private SawtoothDamlOperation envelopeToOperation(final String correlationId, final byte[] envelope,
-      DamlLogEntryId entryId) {
-    SawtoothDamlOperation operation = SawtoothDamlOperation.newBuilder().setCorrelationId(correlationId)
-        .setEnvelope(ByteString.copyFrom(envelope)).setVersion(SawtoothDamlOperation.Version.TWO)
-        .setSubmittingParticipant(getParticipantId()).setLogEntryId(entryId.toByteString()).build();
+  private SawtoothDamlOperation envelopeToOperation(final String correlationId,
+      final ByteString envelope, DamlLogEntryId entryId) {
+    SawtoothDamlOperation operation = SawtoothDamlOperation.newBuilder()
+        .setCorrelationId(correlationId).setEnvelope(envelope)
+        .setVersion(SawtoothDamlOperation.Version.TWO).setSubmittingParticipant(getParticipantId())
+        .setLogEntryId(entryId.toByteString()).build();
     return operation;
   }
 
-  private Batch operationToBatch(final SawtoothDamlOperation operation, final Collection<String> inputAddresses,
-      final Collection<String> outputAddresses) {
-    Transaction sawtoothTxn = SawtoothClientUtils.makeSawtoothTransaction(this.keyManager, Namespace.DAML_FAMILY_NAME,
-        Namespace.DAML_FAMILY_VERSION_1_0, inputAddresses, outputAddresses, Collections.emptyList(),
-        operation.toByteString());
+  private Batch operationToBatch(final SawtoothDamlOperation operation,
+      final Collection<String> inputAddresses, final Collection<String> outputAddresses) {
+    Transaction sawtoothTxn = SawtoothClientUtils.makeSawtoothTransaction(this.keyManager,
+        Namespace.DAML_FAMILY_NAME, Namespace.DAML_FAMILY_VERSION_1_0, inputAddresses,
+        outputAddresses, Collections.emptyList(), operation.toByteString());
     Batch sawtoothBatch = SawtoothClientUtils.makeSawtoothBatch(this.keyManager,
         Collections.singletonList(sawtoothTxn));
-    LOGGER.fine(
-        String.format("Batch %s has tx %s", sawtoothBatch.getHeaderSignature(), sawtoothTxn.getHeaderSignature()));
+    LOGGER.fine(String.format("Batch %s has tx %s", sawtoothBatch.getHeaderSignature(),
+        sawtoothTxn.getHeaderSignature()));
     return sawtoothBatch;
   }
 
@@ -311,17 +332,28 @@ public final class SawtoothWriteService implements LedgerWriter {
   }
 
   @Override
-  public scala.concurrent.Future<SubmissionResult> commit(String correlationId, byte[] envelope) {
+  public scala.concurrent.Future<SubmissionResult> commit(String correlationId,
+      ByteString envelope) {
     ByteString uuidBytes = ByteString.copyFrom(UUID.randomUUID().toString().getBytes());
     DamlLogEntryId entryId = DamlLogEntryId.newBuilder().setEntryId(uuidBytes).build();
-    Collection<String> outputAddresses = makeOutputAddresses(envelope, entryId);
-    Collection<String> inputAddresses = makeInputAddresses(envelope);
-    SawtoothDamlOperation operation=envelopeToOperation(correlationId, envelope, entryId);
+    Collection<String> outputAddresses;
+    Collection<String> inputAddresses;
+    try {
+      outputAddresses = makeOutputAddresses(envelope, entryId);
+      inputAddresses = makeInputAddresses(envelope);
+    } catch (InvalidProtocolBufferException e) {
+      LOGGER
+          .warning("InvalidProtocolBufferException while committing submission " + e.getMessage());
+      return scala.concurrent.Future.successful(new SubmissionResult.InternalError(
+          "Invalid transaction was submitted: InvalidProtocolBuffer"));
+    }
+    SawtoothDamlOperation operation = envelopeToOperation(correlationId, envelope, entryId);
 
     Batch batch = operationToBatch(operation, inputAddresses, outputAddresses);
     Future fut = sendToValidator(batch);
 
-    CompletionStage<SubmissionResult> completionStage = waitForSubmitResponse(batch, fut).thenApplyAsync(this::checkBatchWaitForTerminal, watchThreadPool)
+    CompletionStage<SubmissionResult> completionStage = waitForSubmitResponse(batch, fut)
+        .thenApplyAsync(this::checkBatchWaitForTerminal, watchThreadPool)
         .thenApply(this::batchTerminalToSubmissionResult);
     return FutureConverters.toScala(completionStage);
   }
@@ -331,7 +363,4 @@ public final class SawtoothWriteService implements LedgerWriter {
     return getParticipantId();
   }
 
-  public static void main(String[] args) {
-    StandaloneApi
-  }
 }

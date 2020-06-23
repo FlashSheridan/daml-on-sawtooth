@@ -9,6 +9,8 @@
  */
 package com.blockchaintp.sawtooth.daml.processor.impl;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.CompletionStage;
@@ -17,11 +19,16 @@ import java.util.logging.Logger;
 import com.blockchaintp.sawtooth.daml.processor.LedgerState;
 import com.blockchaintp.sawtooth.daml.protobuf.SawtoothDamlOperation;
 import com.blockchaintp.sawtooth.daml.util.Namespace;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.SharedMetricRegistries;
 import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlLogEntryId;
+import com.daml.ledger.participant.state.kvutils.caching.Cache;
+import com.daml.metrics.Metrics;
 import com.daml.ledger.participant.state.kvutils.KeyValueCommitting;
 import com.daml.ledger.validator.SubmissionValidator;
 import com.daml.ledger.validator.ValidationFailed;
-import com.digitalasset.daml.lf.data.Time.Timestamp;
+import com.daml.lf.data.Time.Timestamp;
+import com.daml.lf.engine.Engine;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.util.Timestamps;
@@ -50,6 +57,10 @@ public final class DamlTransactionHandler implements TransactionHandler {
 
   private final String version;
 
+  private Metrics metricsRegistry;
+
+  private Engine engine;
+
   /**
    * Constructs a TransactionHandler for DAML Transactions.
    *
@@ -58,6 +69,14 @@ public final class DamlTransactionHandler implements TransactionHandler {
     this.namespace = Namespace.getNameSpace();
     this.version = Namespace.DAML_FAMILY_VERSION_1_0;
     this.familyName = Namespace.DAML_FAMILY_NAME;
+    String hostname;
+    try {
+      hostname = InetAddress.getLocalHost().getHostName();
+    } catch (UnknownHostException e) {
+      throw new RuntimeException(e);
+    }
+    this.metricsRegistry = new Metrics(SharedMetricRegistries.getOrCreate(hostname));
+    this.engine = new Engine();
   }
 
   @Override
@@ -74,11 +93,10 @@ public final class DamlTransactionHandler implements TransactionHandler {
         case TWO:
           final ByteString envelopeBs = operation.getEnvelope();
           final ByteString logEntryIdBs = operation.getLogEntryId();
-          final DamlLogEntryId logEntryId = KeyValueCommitting.unpackDamlLogEntryId(logEntryIdBs);
+          final DamlLogEntryId logEntryId = DamlLogEntryId.parseFrom(logEntryIdBs);
           final String correlationId = operation.getCorrelationId();
           final String participantId = operation.getSubmittingParticipant();
-          pocessTransaction(ledgerState, participantId, correlationId, logEntryId,
-              envelopeBs.toByteArray());
+          pocessTransaction(ledgerState, participantId, correlationId, logEntryId, envelopeBs);
           break;
         case UNKNOWN:
         case UNRECOGNIZED:
@@ -92,13 +110,13 @@ public final class DamlTransactionHandler implements TransactionHandler {
   }
 
   private void pocessTransaction(final LedgerState<String> ledgerState, final String participantId,
-      final String correlationId, final DamlLogEntryId logEntryId, final byte[] envelope)
+      final String correlationId, final DamlLogEntryId logEntryId, final ByteString envelope)
       throws InternalError, InvalidTransactionException {
-    // TODO it's terrible that this is created on every transaction.
+
     ExecutionContext ec = ExecutionContext.fromExecutor(ExecutionContext.global());
     SubmissionValidator<String> validator = SubmissionValidator.create(ledgerState, () -> {
       return logEntryId;
-    }, false, ec);
+    }, false, Cache.none(), this.engine, this.metricsRegistry, ec);
     Timestamp recordTime = getRecordTime(ledgerState);
     Future<Either<ValidationFailed, String>> validateAndCommit =
         validator.validateAndCommit(envelope, correlationId, recordTime, participantId);

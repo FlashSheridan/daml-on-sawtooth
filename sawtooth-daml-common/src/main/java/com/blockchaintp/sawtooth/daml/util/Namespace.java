@@ -15,6 +15,7 @@ import java.util.List;
 import com.blockchaintp.utils.SawtoothClientUtils;
 import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlLogEntryId;
 import com.daml.ledger.participant.state.kvutils.DamlKvutils.DamlStateKey;
+import com.google.protobuf.ByteString;
 
 /**
  * Utility class dealing with the common namespace functions and values with Sawtooth and DAML.
@@ -118,7 +119,7 @@ public final class Namespace {
    * @param keybytes byte upon which to basethe key
    * @return the hash of the collected address
    */
-  public static String makeAddress(final String ns, final byte[] keybytes) {
+  public static String makeAddress(final String ns, final ByteString keybytes) {
     String hash = SawtoothClientUtils.getHash(keybytes);
     int begin = hash.length() - ADDRESS_LENGTH + ns.length();
     hash = hash.substring(begin);
@@ -141,7 +142,7 @@ public final class Namespace {
    * @param entryId bytes of the log entry id
    * @return the byte string address
    */
-  public static String makeDamlLogEntryAddress(final byte[] entryIdBytes) {
+  public static String makeDamlLogEntryAddress(final ByteString entryIdBytes) {
     return makeAddress(DAML_LOG_ENTRY_NS, entryIdBytes);
   }
 
@@ -162,7 +163,7 @@ public final class Namespace {
    * @param key DamlStateKey to be used for the address
    * @return the string address
    */
-  public static String makeDamlStateAddress(final byte[] keybytes) {
+  public static String makeDamlStateAddress(final ByteString keybytes) {
     return makeAddress(DAML_STATE_VALUE_NS, keybytes);
   }
 

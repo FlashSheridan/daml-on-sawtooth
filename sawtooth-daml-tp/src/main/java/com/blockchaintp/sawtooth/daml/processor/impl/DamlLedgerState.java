@@ -101,8 +101,12 @@ public final class DamlLedgerState implements LedgerState<String> {
         return DamlStateValue.newBuilder()
             .setCommandDedup(DamlCommandDedupValue.newBuilder().build()).build();
       }
-      return KeyValueCommitting.unpackDamlStateValue(uncompressByteString(bs));
-
+      try {
+        return DamlStateValue.parseFrom(uncompressByteString(bs));
+      } catch (InvalidProtocolBufferException e) {
+        LOGGER.warning(String.format("Invalid protocol buffer at key %s", key.toString()));
+        return null;
+      }
     }
   }
 
@@ -137,9 +141,9 @@ public final class DamlLedgerState implements LedgerState<String> {
       ByteString packDamlStateValue;
       if (key.getKeyCase().equals(DamlStateKey.KeyCase.COMMAND_DEDUP)) {
         LOGGER.fine("Swapping DamlStateKey for DamlStateValue on COMMAND_DEDUP");
-        packDamlStateValue = KeyValueCommitting.packDamlStateKey(key);
+        packDamlStateValue = key.toByteString();
       } else {
-        packDamlStateValue = KeyValueCommitting.packDamlStateValue(val);
+        packDamlStateValue = val.toByteString();
       }
       assert (packDamlStateValue.size() > 0);
       final String address = Namespace.makeAddressForType(key);
@@ -159,7 +163,7 @@ public final class DamlLedgerState implements LedgerState<String> {
   public String addDamlLogEntry(final ByteString entryId, final ByteString entry)
       throws InternalError, InvalidTransactionException {
     final Map<String, ByteString> setMap = new HashMap<>();
-    final String addr = Namespace.makeDamlStateAddress(entryId.toByteArray());
+    final String addr = Namespace.makeDamlStateAddress(entryId);
     setMap.put(addr, entry);
     state.setState(setMap.entrySet());
     sendLogEvent(entryId, entry);
@@ -270,11 +274,9 @@ public final class DamlLedgerState implements LedgerState<String> {
   }
 
   @Override
-  public Future<String> appendToLog(final byte[] logEntryId, final byte[] logEntry) {
-    ByteString entryIdBS = ByteString.copyFrom(logEntryId);
-    ByteString entryBS = ByteString.copyFrom(logEntry);
+  public Future<String> appendToLog(final ByteString logEntryId, final ByteString logEntry) {
     try {
-      return Future.successful(this.addDamlLogEntry(entryIdBS, entryBS));
+      return Future.successful(this.addDamlLogEntry(logEntryId, logEntry));
     } catch (InternalError | InvalidTransactionException e) {
       LOGGER.severe(String.format("Exception sending log event %s", e.getMessage()));
       throw new RuntimeException(e);
@@ -282,14 +284,14 @@ public final class DamlLedgerState implements LedgerState<String> {
   }
 
   @Override
-  public Future<Option<byte[]>> readState(final byte[] oneKey) {
+  public Future<Option<ByteString>> readState(final ByteString oneKey) {
     final String key = Namespace.makeDamlStateAddress(oneKey);
     List<String> keyList = List.of(key);
     try {
       Map<String, ByteString> stateVals = state.getState(keyList);
       for (String k : keyList) {
         if (stateVals.containsKey(key)) {
-          return Future.successful(Option.apply(stateVals.get(k).toByteArray()));
+          return Future.successful(Option.apply(stateVals.get(k)));
         }
       }
       return Future.successful(Option.empty());
@@ -301,18 +303,18 @@ public final class DamlLedgerState implements LedgerState<String> {
   }
 
   @Override
-  public Future<Seq<Option<byte[]>>> readState(final Seq<byte[]> keys) {
+  public Future<Seq<Option<ByteString>>> readState(final Seq<ByteString> keys) {
     List<String> keyList = new ArrayList<>();
-    for (byte[] keybytes : JavaConverters.asJavaCollection(keys)) {
+    for (ByteString keybytes : JavaConverters.asJavaCollection(keys)) {
       final String key = Namespace.makeDamlStateAddress(keybytes);
       keyList.add(key);
     }
     try {
       Map<String, ByteString> stateVals = state.getState(keyList);
-      List<Option<byte[]>> retState = new ArrayList<>();
+      List<Option<ByteString>> retState = new ArrayList<>();
       for (String key : keyList) {
         if (stateVals.containsKey(key)) {
-          retState.add(Option.apply(stateVals.get(key).toByteArray()));
+          retState.add(Option.apply(stateVals.get(key)));
         } else {
           retState.add(Option.empty());
         }
@@ -326,15 +328,14 @@ public final class DamlLedgerState implements LedgerState<String> {
   }
 
   @Override
-  public Future<BoxedUnit> writeState(final Seq<Tuple2<byte[], byte[]>> keyValuePairs) {
+  public Future<BoxedUnit> writeState(final Seq<Tuple2<ByteString, ByteString>> keyValuePairs) {
     final Map<String, ByteString> setMap = new HashMap<>();
 
-    for (final Tuple2<byte[], byte[]> t : JavaConverters.asJavaCollection(keyValuePairs)) {
-      final byte[] keybytes = t._1();
-      final byte[] valbytes = t._2();
+    for (final Tuple2<ByteString, ByteString> t : JavaConverters.asJavaCollection(keyValuePairs)) {
+      final ByteString keybytes = t._1();
+      final ByteString valbytes = t._2();
       final String key = Namespace.makeDamlStateAddress(keybytes);
-      final ByteString val = ByteString.copyFrom(valbytes);
-      setMap.put(key, val);
+      setMap.put(key, valbytes);
     }
     try {
       state.setState(setMap.entrySet());
@@ -346,8 +347,8 @@ public final class DamlLedgerState implements LedgerState<String> {
   }
 
   @Override
-  public Future<BoxedUnit> writeState(final byte[] keybytes, final byte[] value) {
-    Seq<Tuple2<byte[], byte[]>> seq =
+  public Future<BoxedUnit> writeState(final ByteString keybytes, final ByteString value) {
+    Seq<Tuple2<ByteString, ByteString>> seq =
         JavaConversions.asScalaBuffer(List.of(Tuple2.apply(keybytes, value))).toList();
     return writeState(seq);
   }

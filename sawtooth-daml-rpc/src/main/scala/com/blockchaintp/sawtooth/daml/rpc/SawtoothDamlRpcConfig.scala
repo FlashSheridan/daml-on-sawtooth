@@ -6,9 +6,9 @@ package com.blockchaintp.sawtooth.daml.rpc
 import java.io.File
 
 import com.daml.ledger.participant.state.v1.ParticipantId
-import com.digitalasset.daml.lf.data.Ref.ParticipantId
-import com.digitalasset.ledger.api.tls.TlsConfiguration
-import com.digitalasset.platform.indexer.IndexerStartupMode
+import com.daml.lf.data.Ref.ParticipantId
+import com.daml.ledger.api.tls.TlsConfiguration
+import com.daml.platform.indexer.IndexerStartupMode
 
 final case class SawtoothDamlRpcConfig(
     port: Int,

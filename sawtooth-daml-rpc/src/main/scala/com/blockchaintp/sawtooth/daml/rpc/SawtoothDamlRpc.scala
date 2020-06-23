@@ -20,11 +20,11 @@ import com.codahale.metrics.SharedMetricRegistries
 
 import scala.concurrent.duration._
 import com.blockchaintp.utils.DirectoryKeyManager
-import com.digitalasset.api.util.TimeProvider
-import com.digitalasset.daml.lf.archive.DarReader
-import com.digitalasset.daml_lf_dev.DamlLf.Archive
-import com.digitalasset.ledger.api.auth.{AuthServiceWildcard, AuthServiceJWT}
-import com.digitalasset.jwt.{JwtVerifier, HMAC256Verifier}
+import com.daml.api.util.TimeProvider
+import com.daml.lf.archive.DarReader
+import com.daml.daml_lf_dev.DamlLf.Archive
+import com.daml.ledger.api.auth.{AuthServiceWildcard, AuthServiceJWT}
+import com.daml.jwt.{JwtVerifier, HMAC256Verifier}
 
 import com.daml.platform.apiserver.{ApiServerConfig, StandaloneApiServer}
 import com.daml.platform.indexer.{IndexerConfig, StandaloneIndexerServer}
@@ -84,7 +84,7 @@ object SawtoothDamlRpc extends App {
     case _ => AuthServiceWildcard
   }
 
-/**  config.archiveFiles.foreach { file =>
+  config.archiveFiles.foreach { file =>
     for {
       dar <- DarReader { case (_, x) => Try(Archive.parseFrom(x)) }
         .readArchiveFromFile(file)
@@ -94,17 +94,7 @@ object SawtoothDamlRpc extends App {
       Some("uploaded on participant startup")
     )
   }
-**/
 
-  val indexer = Await.result(
-    StandaloneIndexerServer(
-      readService,
-      IndexerConfig(config.participantId, config.jdbcUrl, config.startupMode),
-      NamedLoggerFactory.forParticipant(config.participantId),
-      SharedMetricRegistries.getOrCreate(s"indexer-standaloneApiServer-${config.participantId}")
-    ),
-    30 second
-  )
   private val standaloneApiServer = new StandaloneApiServer(
     ApiServerConfig(config.participantId, config.archiveFiles, config.port, config.jdbcUrl, config.tlsConfig, TimeProvider.UTC, config.maxInboundMessageSize, None),
     readService,
@@ -140,4 +130,6 @@ object SawtoothDamlRpc extends App {
       closeServer()
     }
   }
+
+
 }

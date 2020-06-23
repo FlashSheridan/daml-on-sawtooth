@@ -22,9 +22,9 @@ import com.daml.ledger.participant.state.v1.LedgerInitialConditions;
 import com.daml.ledger.participant.state.v1.Offset;
 import com.daml.ledger.participant.state.v1.ReadService;
 import com.daml.ledger.participant.state.v1.Update;
-import com.digitalasset.daml.lf.data.Time.Timestamp;
-import com.digitalasset.ledger.api.health.HealthStatus;
-import com.digitalasset.ledger.api.health.Healthy$;
+import com.daml.lf.data.Time.Timestamp;
+import com.daml.ledger.api.health.HealthStatus;
+import com.daml.ledger.api.health.Healthy$;
 import com.google.protobuf.ByteString;
 
 import akka.NotUsed;
@@ -94,10 +94,8 @@ public class SawtoothReadService implements ReadService {
   }
 
   private TimeModel getDefaultTimeModel() {
-    return TimeModel.apply(Duration.ofSeconds(DEFAULT_MIN_TX_LATENCY),
-        Duration.ofSeconds(DEFAULT_MAX_CLOCK_SKEW), Duration.ofSeconds(DEFAULT_MAX_TTL),
-        Duration.ofSeconds(DEFAULT_AVG_TX_LATENCY), Duration.ofSeconds(DEFAULT_MIN_SKEW),
-        Duration.ofSeconds(DEFAULT_MAX_SKEW)).get();
+    return TimeModel.apply(Duration.ofSeconds(DEFAULT_AVG_TX_LATENCY),
+        Duration.ofSeconds(DEFAULT_MAX_CLOCK_SKEW), Duration.ofSeconds(DEFAULT_MAX_TTL)).get();
   }
 
   @Override
@@ -110,7 +108,8 @@ public class SawtoothReadService implements ReadService {
     if (data != null) {
       ledgerId = data.toStringUtf8();
     }
-    Configuration blankConfiguration = new Configuration(0, tm);
+    // TODO: Make these constants
+    Configuration blankConfiguration = new Configuration(1L, tm, Duration.ofMinutes(10L));
     Flowable<LedgerInitialConditions> f = Flowable.fromArray(new LedgerInitialConditions[] {
         new LedgerInitialConditions(ledgerId, blankConfiguration, BEGINNING_OF_EPOCH)});
     return Source.fromPublisher(f);
@@ -125,7 +124,8 @@ public class SawtoothReadService implements ReadService {
     } else {
       if (this.startAtTheBeginning) {
         LOGGER.info("Starting at the beginning of the chain (offset=1-0) as requested");
-        Offset offset = new Offset(new long[] {1, 0});
+
+        Offset offset = toOffset(new long[] {1, 0});
         this.handler.sendSubscribe(offset);
       } else {
         LOGGER.info(String.format("Starting event handling at wherever is current"));
@@ -136,6 +136,19 @@ public class SawtoothReadService implements ReadService {
       this.handler.setTracer(this.trace);
     }
     return Source.fromPublisher(this.handler.getPublisher());
+  }
+
+  private Offset toOffset(long[] elements) {
+    StringBuilder sb = new StringBuilder();
+    boolean second = false;
+    for (long e : elements) {
+      if (second) {
+        sb.append("-");
+      }
+      sb.append(Long.toString(e));
+      second = true;
+    }
+    return new Offset(ByteString.copyFromUtf8(sb.toString()));
   }
 
   @Override

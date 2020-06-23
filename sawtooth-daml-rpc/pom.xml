@@ -14,9 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  -->
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>daml-on-sawtooth</groupId>
@@ -120,12 +118,12 @@
 
     <!-- DAML -->
     <dependency>
-      <groupId>com.digitalasset.ledger</groupId>
+      <groupId>com.daml</groupId>
       <artifactId>ledger-api-auth_${scala.lang.version}</artifactId>
     </dependency>
     <!-- Required for the index server -->
     <dependency>
-      <groupId>com.digitalasset.platform</groupId>
+      <groupId>com.daml</groupId>
       <artifactId>sandbox_${scala.lang.version}</artifactId>
     </dependency>
 

@@ -5,8 +5,8 @@ package com.blockchaintp.sawtooth.daml.rpc
 
 import java.io.File
 
-import com.digitalasset.daml.lf.data.Ref
-import com.digitalasset.ledger.api.tls.TlsConfiguration
+import com.daml.lf.data.Ref
+import com.daml.ledger.api.tls.TlsConfiguration
 import scopt.Read
 
 object Cli {
